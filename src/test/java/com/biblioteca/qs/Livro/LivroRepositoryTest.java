@@ -19,7 +19,7 @@ import java.util.List;
 @DataMongoTest(properties = {
         "spring.session.store-type=none"
 })
-public class LivroRepositoryTest {
+class LivroRepositoryTest {
     @Autowired
     private LivroRepository livroRepository;
     @Container
