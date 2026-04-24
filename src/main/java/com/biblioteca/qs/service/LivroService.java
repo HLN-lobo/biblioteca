@@ -3,7 +3,6 @@ package com.biblioteca.qs.service;
 import com.biblioteca.qs.model.Livro;
 import com.biblioteca.qs.repository.LivroRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
