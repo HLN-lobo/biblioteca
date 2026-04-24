@@ -32,7 +32,7 @@
             O 'wiremock-standalone' causa conflitos de classpath com
             Jackson/Jetty já presentes no Spring Boot 3.
         -->
-        <wiremock.version>3.5.4</wiremock.version>
+        <wiremock.version>3.3.1</wiremock.version> 
 
         <!-- SonarQube / SonarCloud -->
         <!--
@@ -247,7 +247,7 @@
             - Suporte a gravação e replay de chamadas HTTP reais (VCR)
         -->
         <dependency>
-            <groupId>org.wiremock.integrations</groupId>
+             <groupId>org.wiremock</groupId> 
             <artifactId>wiremock-spring-boot</artifactId>
             <version>${wiremock.version}</version>
             <scope>test</scope>
