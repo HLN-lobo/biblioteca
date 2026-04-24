@@ -246,12 +246,6 @@
             - Integração automática com o contexto Spring via @WireMockTest
             - Suporte a gravação e replay de chamadas HTTP reais (VCR)
         -->
-        <dependency>
-             <groupId>org.wiremock</groupId> 
-            <artifactId>wiremock-spring-boot</artifactId>
-            <version>${wiremock.version}</version>
-            <scope>test</scope>
-        </dependency>
 
         <!-- AssertJ — declarado explicitamente para deixar intenção clara -->
         <dependency>
