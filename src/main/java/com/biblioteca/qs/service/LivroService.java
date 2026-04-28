@@ -11,15 +11,12 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class LivroService {
-    private LivroRepository livroRepository;
+    private final LivroRepository livroRepository;
 
     public List<Livro> findAll() {
         return livroRepository.findAll();
     }
 
-    public LivroService(LivroRepository livroRepository) {
-        this.livroRepository = livroRepository;
-    }
     public Optional<Livro> buscarPorId(String id) {
         return livroRepository.findById(id);
     }

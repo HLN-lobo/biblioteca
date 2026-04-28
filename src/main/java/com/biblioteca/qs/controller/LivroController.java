@@ -20,13 +20,22 @@ import java.util.List;
 @RequestMapping("/livros")
 @RequiredArgsConstructor
 public class LivroController {
-    private LivroRepository livroRepository;
-    LivroService livroService;
+
+    private final LivroService livroService;
+
     @GetMapping
     public ResponseEntity<List<Livro>> getAllLivros(){
         return ResponseEntity.ok(this.livroService.findAll());
     }
-        @PostMapping
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Livro> buscar(@PathVariable String id) {
+        return livroService.buscarPorId(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping
     public Livro criar(@RequestBody Livro livro) {
         return livroService.salvar(livro);
     }
