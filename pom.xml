@@ -147,13 +147,6 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- ── UTILITÁRIOS ───────────────────────────────────────────── -->
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <optional>true</optional>
-        </dependency>
-
         <!-- ── ACTUATOR (health checks para CI/CD e monitoramento) ──── -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
