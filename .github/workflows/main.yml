@@ -3,13 +3,15 @@ name: CI
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
     branches:
       - "**"
 
 jobs:
-  test:
+  # JOB 1 — Testes Unitários (Surefire — *Test.java)
+  unit-tests:
+    name: Testes Unitários
     runs-on: ubuntu-latest
 
     steps:
@@ -29,9 +31,288 @@ jobs:
       - name: Rodar testes unitários
         run: ./mvnw -B -ntp test
 
-      - name: Upload relatório de testes
+      - name: Upload relatório Surefire
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
           path: target/surefire-reports/
+          
+  # JOB 2 — Cobertura JaCoCo
+  coverage:
+    name: Cobertura JaCoCo
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Permitir execução do Maven Wrapper
+        run: chmod +x mvnw
+
+      - name: Rodar verify (unitários + ITs + JaCoCo)
+        run: ./mvnw -B -ntp verify -Djacoco.check.skip=true
+
+      - name: Upload relatório JaCoCo (HTML)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+
+      - name: Comentar cobertura no PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const xml = fs.readFileSync('target/site/jacoco/jacoco.xml', 'utf8');
+
+            const sum = (regex) => [...xml.matchAll(regex)].reduce((a, m) => a + +m[1], 0);
+
+            const missedLines   = sum(/<counter type="LINE" missed="(\d+)"/g);
+            const coveredLines  = sum(/<counter type="LINE" missed="\d+" covered="(\d+)"/g);
+            const missedBranch  = sum(/<counter type="BRANCH" missed="(\d+)"/g);
+            const coveredBranch = sum(/<counter type="BRANCH" missed="\d+" covered="(\d+)"/g);
+
+            const pctLine   = coveredLines  + missedLines   > 0
+              ? (coveredLines   / (coveredLines   + missedLines)   * 100).toFixed(1) : 'N/A';
+            const pctBranch = coveredBranch + missedBranch  > 0
+              ? (coveredBranch  / (coveredBranch  + missedBranch)  * 100).toFixed(1) : 'N/A';
+
+            const icon = parseFloat(pctLine) >= 80 ? '✅' : '⚠️';
+
+            const body = [
+              `## ${icon} Cobertura de Código — JaCoCo`,
+              '',
+              `| Métrica  | Cobertas | Perdidas | Cobertura |`,
+              `|----------|----------|----------|-----------|`,
+              `| Linhas   | ${coveredLines} | ${missedLines} | **${pctLine}%** |`,
+              `| Branches | ${coveredBranch} | ${missedBranch} | **${pctBranch}%** |`,
+              '',
+              `> Gate mínimo configurado no \`pom.xml\`: **80% de linhas**`,
+              `> Relatório HTML completo disponível nos artifacts desta execução.`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            for (const c of comments) {
+              if (c.body && c.body.includes('Cobertura de Código — JaCoCo')) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo:  context.repo.repo,
+                  comment_id: c.id,
+                });
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 3 — Revisão de PR com Gemini 2.5 Flash
+  #
+  # PRÉ-REQUISITO:
+  #   Settings → Secrets → Actions → New repository secret
+  #   Nome:  GEMINI_API_KEY
+  #   Valor: sua chave do Google AI Studio (aistudio.google.com)
+  # ─────────────────────────────────────────────────────────────
+  ai-review:
+    name: Revisão de PR com Gemini
+    runs-on: ubuntu-latest
+    needs: coverage
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gerar diff do PR
+        run: |
+          BASE=${{ github.event.pull_request.base.sha }}
+          HEAD=${{ github.event.pull_request.head.sha }}
+          git diff "$BASE" "$HEAD" -- '*.java' '*.yml' '*.xml' \
+            | head -n 400 > /tmp/pr_diff.txt
+          echo "Linhas no diff: $(wc -l < /tmp/pr_diff.txt)"
+
+      - name: Chamar Gemini para revisar o PR
+        id: gemini-review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          DIFF=$(cat /tmp/pr_diff.txt)
+
+          # Monta o prompt num arquivo para evitar problemas de escaping no bash
+          cat > /tmp/prompt.txt << 'ENDOFPROMPT'
+          Você é um revisor de código sênior para um projeto Java Spring Boot chamado 'biblioteca-pessoal'.
+          Ele usa: Spring Boot 3, MongoDB, Testcontainers, WireMock (VCR), Spring Security, Thymeleaf e JaCoCo.
+          O projeto NÃO usa Mockito por decisão arquitetural — todos os testes usam infraestrutura real.
+
+          Retorne APENAS um JSON válido neste formato, sem markdown, sem texto adicional:
+          {"decision": "APPROVE" ou "REQUEST_CHANGES", "summary": "resumo em 2-3 frases", "issues": ["problema 1"], "praise": ["ponto positivo 1"]}
+
+          Critérios para APPROVE:
+          - Testes presentes (*Test.java ou *IT.java)
+          - Sem uso de Mockito
+          - Sem credenciais hardcoded
+          - Código legível e alinhado com boas práticas Spring Boot
+
+          Critérios para REQUEST_CHANGES:
+          - Ausência de testes para lógica nova
+          - Uso de Mockito (violação arquitetural)
+          - Credenciais hardcoded
+          - Problemas graves de segurança ou lógica
+          ENDOFPROMPT
+
+          # Concatena título, descrição e diff ao prompt
+          echo "Título do PR: $PR_TITLE" >> /tmp/prompt.txt
+          echo "Descrição: $PR_BODY"     >> /tmp/prompt.txt
+          echo "Diff:"                   >> /tmp/prompt.txt
+          cat /tmp/pr_diff.txt           >> /tmp/prompt.txt
+
+          PROMPT=$(cat /tmp/prompt.txt)
+
+          # Monta payload JSON com jq (lida corretamente com qualquer caractere)
+          PAYLOAD=$(jq -n --arg p "$PROMPT" '{
+            contents: [{ parts: [{ text: $p }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
+          }')
+
+          RESPONSE=$(curl -s \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GEMINI_API_KEY")
+
+          echo "Resposta bruta da API:"
+          echo "$RESPONSE"
+
+          # Verifica se foi cortado por limite de tokens
+          FINISH_REASON=$(echo "$RESPONSE" | jq -r '.candidates[0].finishReason // empty')
+          if [ "$FINISH_REASON" = "MAX_TOKENS" ]; then
+            echo "ERRO: Resposta cortada por MAX_TOKENS."
+            exit 1
+          fi
+
+          GEMINI_TEXT=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text // empty')
+
+          if [ -z "$GEMINI_TEXT" ]; then
+            echo "ERRO: Resposta vazia. Verifique o GEMINI_API_KEY nos secrets."
+            exit 1
+          fi
+
+          # Limpa markdown e salva o JSON
+          echo "$GEMINI_TEXT" \
+            | sed 's/```json//g' \
+            | sed 's/```//g' \
+            | tr -d '\n' \
+            | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' \
+            > /tmp/gemini_response.json
+
+          DECISION=$(jq -r '.decision' /tmp/gemini_response.json)
+          SUMMARY=$(jq -r '.summary'  /tmp/gemini_response.json)
+
+          if [ -z "$DECISION" ] || [ "$DECISION" = "null" ]; then
+            echo "ERRO: Não foi possível extrair 'decision' do JSON."
+            cat /tmp/gemini_response.json
+            exit 1
+          fi
+
+          echo "decision=$DECISION" >> $GITHUB_OUTPUT
+          echo "summary=$SUMMARY"   >> $GITHUB_OUTPUT
+          echo "Gemini decidiu: $DECISION"
+
+      - name: Postar revisão no PR
+        uses: actions/github-script@v7
+        env:
+          DECISION: ${{ steps.gemini-review.outputs.decision }}
+          SUMMARY:  ${{ steps.gemini-review.outputs.summary }}
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = context.payload.pull_request.number;
+            const decision = process.env.DECISION;
+            const summary  = process.env.SUMMARY;
+
+            let geminiData = {};
+            try {
+              geminiData = JSON.parse(fs.readFileSync('/tmp/gemini_response.json', 'utf8'));
+            } catch (e) {
+              console.log('Aviso: não foi possível ler JSON detalhado do Gemini.');
+            }
+
+            const issues  = (geminiData.issues || []).map(i => `- ⚠️ ${i}`).join('\n') || '- Nenhum problema encontrado';
+            const praises = (geminiData.praise  || []).map(p => `- ✅ ${p}`).join('\n') || '- Nenhum';
+            const icon    = decision === 'APPROVE' ? '🤖✅' : '🤖🔁';
+
+            const body = [
+              `## ${icon} Revisão Automática — Gemini 2.5 Flash`,
+              '',
+              `**Decisão:** \`${decision}\``,
+              '',
+              `**Resumo:** ${summary}`,
+              '',
+              `### ✅ Pontos positivos`,
+              praises,
+              '',
+              `### ⚠️ Problemas encontrados`,
+              issues,
+              '',
+              `---`,
+              `*Revisão gerada automaticamente pelo Gemini 2.5 Flash. Sempre valide com revisão humana em mudanças críticas.*`,
+            ].join('\n');
+
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            for (const r of reviews) {
+              if (r.body && r.body.includes('Revisão Automática — Gemini')) {
+                await github.rest.pulls.dismissReview({
+                  owner: context.repo.owner,
+                  repo:  context.repo.repo,
+                  pull_number: prNumber,
+                  review_id: r.id,
+                  message: 'Substituído por revisão mais recente.',
+                });
+              }
+            }
+
+            await github.rest.pulls.createReview({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              pull_number: prNumber,
+              event: decision === 'APPROVE' ? 'APPROVE' : 'REQUEST_CHANGES',
+              body,
+            });
+
+            console.log(`PR #${prNumber} — ${decision}`);
