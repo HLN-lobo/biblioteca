@@ -218,7 +218,7 @@ jobs:
           RESPONSE=$(curl -s \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GEMINI_API_KEY")
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$GEMINI_API_KEY")
 
           echo "Resposta bruta da API:"
           echo "$RESPONSE"
@@ -277,7 +277,7 @@ jobs:
             const icon = decision === 'APPROVE' ? '🤖✅' : '🤖🔁';
 
             const body = [
-              `## ${icon} Revisão Automática — Gemini 1.5 Flash`,
+              `## ${icon} Revisão Automática — Gemini 2.0 Flash`,
               '',
               `**Decisão:** \`${decision}\``,
               '',
@@ -290,7 +290,7 @@ jobs:
               issues,
               '',
               `---`,
-              `*Revisão gerada automaticamente pelo Gemini 1.5 Flash. Sempre valide com revisão humana em mudanças críticas.*`,
+              `*Revisão gerada automaticamente pelo Gemini 2.0 Flash. Sempre valide com revisão humana em mudanças críticas.*`,
             ].join('\n');
 
             // Descarta reviews anteriores do bot para não acumular
