@@ -71,7 +71,7 @@ jobs:
 
       - name: Rodar verify (ITs + JaCoCo)
         # -Dsurefire.skip=true evita reexecutar os unitários já rodados na job anterior
-        run: ./mvnw -B -ntp verify -Dsurefire.skip=true
+        run: ./mvnw -B -ntp verify #-Dsurefire.skip=true
 
       - name: Upload relatório JaCoCo (HTML)
         if: always()
