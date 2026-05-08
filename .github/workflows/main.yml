@@ -9,9 +9,7 @@ on:
       - "**"
 
 jobs:
-  # ─────────────────────────────────────────────────────────────
   # JOB 1 — Testes Unitários (Surefire — *Test.java)
-  # ─────────────────────────────────────────────────────────────
   unit-tests:
     name: Testes Unitários
     runs-on: ubuntu-latest
@@ -39,10 +37,8 @@ jobs:
         with:
           name: surefire-reports
           path: target/surefire-reports/
-
-  # ─────────────────────────────────────────────────────────────
+          
   # JOB 2 — Cobertura JaCoCo
-  # ─────────────────────────────────────────────────────────────
   coverage:
     name: Cobertura JaCoCo
     runs-on: ubuntu-latest
