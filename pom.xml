@@ -380,17 +380,10 @@
 
                     <execution>
                         <id>report</id>
-                        <phase>test</phase>
-
+                        <phase>verify</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
-                        <configuration>
-                            <outputDirectory>
-                                ${project.basedir}/coverage-report
-                            </outputDirectory>
-
-                        </configuration>
                     </execution>
 
                     <!--
