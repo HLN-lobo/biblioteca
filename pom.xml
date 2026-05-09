@@ -130,6 +130,11 @@
             <groupId>org.springframework.session</groupId>
             <artifactId>spring-session-data-mongodb</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.auth0</groupId>
+            <artifactId>java-jwt</artifactId>
+            <version>4.4.0</version>
+        </dependency>
 
         <!-- ── BANCO DE DADOS ────────────────────────────────────────── -->
         <dependency>
@@ -375,10 +380,17 @@
 
                     <execution>
                         <id>report</id>
-                        <phase>verify</phase>
+                        <phase>test</phase>
+
                         <goals>
                             <goal>report</goal>
                         </goals>
+                        <configuration>
+                            <outputDirectory>
+                                ${project.basedir}/coverage-report
+                            </outputDirectory>
+
+                        </configuration>
                     </execution>
 
                     <!--
