@@ -1,14 +1,16 @@
 package com.biblioteca.qs.service;
 
 import com.biblioteca.qs.model.Livro;
+import com.biblioteca.qs.model.LivroDTO;
 import com.biblioteca.qs.repository.LivroRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +46,27 @@ public class LivroService {
     }
 
     public void deletar(String id) {
-        livroRepository.deleteById(id);
+
+        Livro livro = buscarPorId(id);
+
+        livroRepository.delete(livro);
+    }
+
+    private void validarLivro(LivroDTO body){
+
+        if(body.nome() == null || body.nome().isBlank()){
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "O nome do livro é obrigatório"
+            );
+        }
+
+        if(body.descricao() == null || body.descricao().isBlank()){
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "A descrição do livro é obrigatória"
+            );
+        }
     }
 
     public List<Livro> buscarEFiltrar(String usuarioId, String busca, String genero, String ordem) {
