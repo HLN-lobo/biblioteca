@@ -66,7 +66,7 @@ class LivroControllerTest {
     @Test
     void deveListarLivros() throws Exception {
 
-        mockMvc.perform(get("/livros"))
+        mockMvc.perform(get("/livros/todos"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(1)))
                 .andExpect(
