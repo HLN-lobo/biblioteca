@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -30,38 +31,48 @@ public class LivroService {
         return livroRepository.findById(id);
     }
 
-    public Livro salvar(Livro livro) {
+    public Livro salvar(LivroDTO body) {
+        validarLivro(body);
+
+        Livro livro = new Livro();
+        livro.setNome(body.nome());
+        livro.setAutor(body.autor());
+        livro.setGenero(body.genero());
+        livro.setDescricao(body.descricao());
+        livro.setCapa(body.capa());
+        livro.setUsuarioId(body.usuarioId());
+
         return livroRepository.save(livro);
     }
 
-    public Livro atualizar(String id, Livro livroAtualizado) {
+    public Livro atualizar(String id, LivroDTO dto) {
         return livroRepository.findById(id).map(livro -> {
-            livro.setNome(livroAtualizado.getNome());
-            livro.setAutor(livroAtualizado.getAutor());
-            livro.setGenero(livroAtualizado.getGenero());
-            livro.setDescricao(livroAtualizado.getDescricao());
-            livro.setCapa(livroAtualizado.getCapa());
+            livro.setNome(dto.nome());
+            livro.setAutor(dto.autor());
+            livro.setGenero(dto.genero());
+            livro.setDescricao(dto.descricao());
+            livro.setCapa(dto.capa());
             return livroRepository.save(livro);
-        }).orElseThrow(() -> new RuntimeException("Livro não encontrado: " + id));
+        }).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Livro não encontrado: " + id));
     }
-
     public void deletar(String id) {
-
-        Livro livro = buscarPorId(id);
+        Livro livro = livroRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Livro não encontrado: " + id));
 
         livroRepository.delete(livro);
     }
 
-    private void validarLivro(LivroDTO body){
-
-        if(body.nome() == null || body.nome().isBlank()){
+    private void validarLivro(LivroDTO body) {
+        if (body.nome() == null || body.nome().isBlank()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "O nome do livro é obrigatório"
             );
         }
 
-        if(body.descricao() == null || body.descricao().isBlank()){
+        if (body.descricao() == null || body.descricao().isBlank()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "A descrição do livro é obrigatória"
@@ -108,13 +119,15 @@ public class LivroService {
         return livroRepository.findById(id).map(livro -> {
             livro.setAvaliacao(avaliacao);
             return livroRepository.save(livro);
-        }).orElseThrow(() -> new RuntimeException("Livro não encontrado: " + id));
+        }).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Livro não encontrado: " + id));
     }
 
     public Livro alternarFavorito(String id) {
         return livroRepository.findById(id).map(livro -> {
             livro.setFavorito(!livro.isFavorito());
             return livroRepository.save(livro);
-        }).orElseThrow(() -> new RuntimeException("Livro não encontrado: " + id));
+        }).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Livro não encontrado: " + id));
     }
 }

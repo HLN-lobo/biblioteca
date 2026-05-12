@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -35,9 +36,11 @@ public class LivroController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Livro> buscar(@PathVariable String id) {
-        return ResponseEntity.ok(livroService.buscarPorId(id));
+        return livroService.buscarPorId(id)
+                .map(livro -> ResponseEntity.status(HttpStatus.OK).body(livro))
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Livro não encontrado: " + id));
     }
-
     @PostMapping
     public ResponseEntity<Livro> criar(@RequestBody LivroDTO body) {
         return ResponseEntity.status(HttpStatus.CREATED).body(livroService.salvar(body));
@@ -65,8 +68,6 @@ public class LivroController {
             return ResponseEntity.notFound().build();
         }
     }
-
-    // Card 10 — PATCH favorito (toggle)
     @PatchMapping("/{id}/favorito")
     public ResponseEntity<Livro> favoritar(@PathVariable String id) {
         try {

@@ -135,7 +135,7 @@ class SecurityFilterTest {
         String token = tokenService.generateToken(usuario);
 
         mockMvc.perform(
-                        get("/livros")
+                        get("/livros/todos")
                                 .header("Authorization", "Bearer " + token)
                 )
                 .andExpect(status().isOk());
