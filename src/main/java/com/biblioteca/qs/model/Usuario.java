@@ -16,13 +16,23 @@ public class Usuario {
     private String email;
 
     private String nome;
-    private String senha; 
+    private String senha;
 
-    public Usuario() {}
+    private String cep;
+    private Endereco endereco;
+
+    public Usuario() {
+    }
 
     public Usuario(String email, String nome, String senha) {
         this.email = email;
         this.nome = nome;
         this.senha = senha;
+    }
+        public Usuario(String email, String nome, String senha, String cep) {
+        this.email = email;
+        this.nome = nome;
+        this.senha = senha;
+        this.cep = cep;
     }
 }
