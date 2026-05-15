@@ -3,16 +3,48 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - "**"        # push em qualquer branch
   pull_request:
-    branches:
-      - "**"
+    types:
+      - opened      # PR aberto
+      - synchronize # PR atualizado (novo commit)
+      - reopened    # PR reaberto
 
 jobs:
-  # JOB 1 — Testes Unitários (Surefire — *Test.java)
+  # ─────────────────────────────────────────────────────────────
+  # JOB 1 — Build
+  # Compila o projeto sem rodar testes para falhar rápido
+  # em erros de compilação antes de gastar tempo com testes
+  # ─────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: maven
+
+      - name: Permitir execução do Maven Wrapper
+        run: chmod +x mvnw
+
+      - name: Compilar projeto
+        run: ./mvnw -B -ntp compile
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 2 — Testes Unitários
+  # Depende do build passar antes de rodar
+  # ─────────────────────────────────────────────────────────────
   unit-tests:
     name: Testes Unitários
     runs-on: ubuntu-latest
+    needs: build
 
     steps:
       - name: Checkout código
@@ -37,10 +69,18 @@ jobs:
         with:
           name: surefire-reports
           path: target/surefire-reports/
-          
-  # JOB 2 — Cobertura JaCoCo
+
+  # ─────────────────────────────────────────────────────────────
+  # JOB 3 — Cobertura JaCoCo + SonarCloud
+  # Depende dos testes unitários passarem
+  #
+  # PRÉ-REQUISITO:
+  #   Settings → Secrets → Actions → New repository secret
+  #   Nome:  SONAR_TOKEN
+  #   Valor: token gerado em sonarcloud.io/account/security
+  # ─────────────────────────────────────────────────────────────
   coverage:
-    name: Cobertura JaCoCo
+    name: Cobertura JaCoCo + SonarCloud
     runs-on: ubuntu-latest
     needs: unit-tests
 
@@ -51,6 +91,9 @@ jobs:
     steps:
       - name: Checkout código
         uses: actions/checkout@v4
+        with:
+          # Obrigatório para o SonarCloud analisar o histórico de commits
+          fetch-depth: 0
 
       - name: Configurar Java 21
         uses: actions/setup-java@v4
@@ -62,8 +105,16 @@ jobs:
       - name: Permitir execução do Maven Wrapper
         run: chmod +x mvnw
 
-      - name: Rodar verify (unitários + ITs + JaCoCo)
+      - name: Rodar verify (gera relatório JaCoCo)
         run: ./mvnw -B -ntp verify -Djacoco.check.skip=true
+
+      - name: Analisar com SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          ./mvnw -B -ntp sonar:sonar \
+            -Dsonar.token=$SONAR_TOKEN \
+            -Dsonar.qualitygate.wait=true
 
       - name: Upload relatório JaCoCo (HTML)
         if: always()
@@ -103,7 +154,7 @@ jobs:
               `| Branches | ${coveredBranch} | ${missedBranch} | **${pctBranch}%** |`,
               '',
               `> Gate mínimo configurado no \`pom.xml\`: **80% de linhas**`,
-              `> Relatório HTML completo disponível nos artifacts desta execução.`,
+              `> 🔍 [Ver análise completa no SonarCloud](https://sonarcloud.io/project/overview?id=HLN-lobo_biblioteca)`,
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -130,7 +181,10 @@ jobs:
             });
 
   # ─────────────────────────────────────────────────────────────
-  # JOB 3 — Revisão de PR com Gemini 2.5 Flash
+  # JOB 4 — Revisão com Gemini 2.5 Flash
+  # Depende da cobertura passar
+  # Em push direto sem PR o diff não existe, então o Gemini
+  # analisa apenas o histórico recente do commit
   #
   # PRÉ-REQUISITO:
   #   Settings → Secrets → Actions → New repository secret
@@ -138,10 +192,9 @@ jobs:
   #   Valor: sua chave do Google AI Studio (aistudio.google.com)
   # ─────────────────────────────────────────────────────────────
   ai-review:
-    name: Revisão de PR com Gemini
+    name: Revisão com Gemini
     runs-on: ubuntu-latest
     needs: coverage
-    if: github.event_name == 'pull_request'
 
     permissions:
       pull-requests: write
@@ -153,24 +206,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Gerar diff do PR
+      - name: Gerar diff para análise
         run: |
-          BASE=${{ github.event.pull_request.base.sha }}
-          HEAD=${{ github.event.pull_request.head.sha }}
-          git diff "$BASE" "$HEAD" -- '*.java' '*.yml' '*.xml' \
-            | head -n 400 > /tmp/pr_diff.txt
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Em PRs: diff completo entre base e head
+            BASE=${{ github.event.pull_request.base.sha }}
+            HEAD=${{ github.event.pull_request.head.sha }}
+            git diff "$BASE" "$HEAD" -- '*.java' '*.yml' '*.xml' \
+              | head -n 400 > /tmp/pr_diff.txt
+          else
+            # Em push direto: diff do último commit
+            git diff HEAD~1 HEAD -- '*.java' '*.yml' '*.xml' \
+              | head -n 400 > /tmp/pr_diff.txt
+          fi
           echo "Linhas no diff: $(wc -l < /tmp/pr_diff.txt)"
 
-      - name: Chamar Gemini para revisar o PR
+      - name: Chamar Gemini para revisar
         id: gemini-review
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_TITLE: ${{ github.event.pull_request.title || github.event.head_commit.message }}
+          PR_BODY: ${{ github.event.pull_request.body || '' }}
         run: |
           DIFF=$(cat /tmp/pr_diff.txt)
 
-          # Monta o prompt num arquivo para evitar problemas de escaping no bash
           cat > /tmp/prompt.txt << 'ENDOFPROMPT'
           Você é um revisor de código sênior para um projeto Java Spring Boot chamado 'biblioteca-pessoal'.
           Ele usa: Spring Boot 3, MongoDB, Testcontainers, WireMock (VCR), Spring Security, Thymeleaf e JaCoCo.
@@ -192,15 +251,13 @@ jobs:
           - Problemas graves de segurança ou lógica
           ENDOFPROMPT
 
-          # Concatena título, descrição e diff ao prompt
-          echo "Título do PR: $PR_TITLE" >> /tmp/prompt.txt
-          echo "Descrição: $PR_BODY"     >> /tmp/prompt.txt
-          echo "Diff:"                   >> /tmp/prompt.txt
-          cat /tmp/pr_diff.txt           >> /tmp/prompt.txt
+          echo "Título: $PR_TITLE"   >> /tmp/prompt.txt
+          echo "Descrição: $PR_BODY" >> /tmp/prompt.txt
+          echo "Diff:"               >> /tmp/prompt.txt
+          cat /tmp/pr_diff.txt       >> /tmp/prompt.txt
 
           PROMPT=$(cat /tmp/prompt.txt)
 
-          # Monta payload JSON com jq (lida corretamente com qualquer caractere)
           PAYLOAD=$(jq -n --arg p "$PROMPT" '{
             contents: [{ parts: [{ text: $p }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 4096 }
@@ -214,7 +271,6 @@ jobs:
           echo "Resposta bruta da API:"
           echo "$RESPONSE"
 
-          # Verifica se foi cortado por limite de tokens
           FINISH_REASON=$(echo "$RESPONSE" | jq -r '.candidates[0].finishReason // empty')
           if [ "$FINISH_REASON" = "MAX_TOKENS" ]; then
             echo "ERRO: Resposta cortada por MAX_TOKENS."
@@ -228,7 +284,6 @@ jobs:
             exit 1
           fi
 
-          # Limpa markdown e salva o JSON
           echo "$GEMINI_TEXT" \
             | sed 's/```json//g' \
             | sed 's/```//g' \
@@ -250,6 +305,7 @@ jobs:
           echo "Gemini decidiu: $DECISION"
 
       - name: Postar revisão no PR
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         env:
           DECISION: ${{ steps.gemini-review.outputs.decision }}
@@ -316,3 +372,10 @@ jobs:
             });
 
             console.log(`PR #${prNumber} — ${decision}`);
+
+      - name: Logar decisão do Gemini (push direto)
+        if: github.event_name == 'push'
+        run: |
+          echo "Análise Gemini concluída para push em ${{ github.ref_name }}"
+          echo "Decisão: ${{ steps.gemini-review.outputs.decision }}"
+          echo "Resumo: ${{ steps.gemini-review.outputs.summary }}"
